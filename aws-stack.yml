@@ -1,0 +1,103 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Serverless geocodes using API Gateway and Lambda.
+
+Resources:
+
+  GeocoderApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${AWS::StackName}-GeocoderApiGateway"
+      Description: API gateway to the geocoder service
+      FailOnWarnings: true
+      Body:
+        swagger: 2.0
+        info:
+          description: |
+            The geocoder API.
+          version: 1.0
+        basePath: /
+        schemes:
+          - https
+        consumes:
+          - application/json
+        produces:
+          - application/json
+        paths:
+          /geocoder/{zip_from}/{zip_to}:
+            get:
+              description: Computes the driving distance between two zip codes
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GeocoderLambda.Arn}/invocations"
+                credentials: !GetAtt GeocoderApiGatewayRole.Arn
+                passthroughBehavior: when_no_match
+                httpMethod: POST
+                type: aws_proxy
+              operationId: getGeocode
+              parameters:
+                - name: zip_from
+                  in: path
+                  description: Zip code of the origin
+                  required: true
+                  type: string
+                - name: zip_to
+                  in: path
+                  description: Zip code of the destination
+                  required: true
+                  type: string
+
+  GeocoderApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref GeocoderApiGateway
+      StageName: prod
+
+  GeocoderApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt GeocoderLambda.Arn
+
+  GeocoderLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          'PYTHONPATH': 'package'
+      FunctionName: serverless-Geocoder
+      Role: !GetAtt GeocoderLambdaRole.Arn
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context)
+
+  GeocoderLambdaRole:  # -> AppAPIRole
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
